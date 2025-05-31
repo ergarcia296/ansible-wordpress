@@ -1,0 +1,123 @@
+---
+- hosts: node1
+  become: true
+  tasks:
+  - name: Instalando paquetes
+    ansible.builtin.apt:
+      name:
+        - apache2
+        - ghostscript
+        - libapache2-mod-php
+        - php
+        - php-mysql
+        - php-curl
+        - php-gd
+        - php-mbstring
+        - php-xml
+        - php-xmlrpc
+        - php-soap
+        - php-bcmath
+        - php-imagick
+        - php-intl
+        - php-json
+        - php-zip
+        - mysql-server
+        - unzip
+      state: present
+      update_cache: yes
+  - name: Creando directorio www
+    ansible.builtin.file:
+      path: /srv/www
+      state: directory
+      owner: www-data
+      group: www-data
+      mode: '0755'
+  - name: Descargando checksum de WordPress
+    uri: url=https://wordpress.org/latest.zip.sha1 return_content=true
+    register: wp_checksum
+  - name: Descargando WordPress
+    get_url:
+      url: https://wordpress.org/latest.zip
+      dest: /srv/www/wordpress.zip
+      checksum: "sha1:{{wp_checksum.content}}"
+  - name: Descargando CLI de WordPress
+    ansible.builtin.command: "{{ item }}"
+    args:
+      chdir: /srv/www
+    with_items:
+      - unzip wordpress.zip
+      - chown -R www-data:www-data /srv 
+      - rm /srv/www/wordpress.zip
+      - curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+      - chmod +x wp-cli.phar
+      - mv wp-cli.phar /usr/bin/wp
+  - name: Iniciando Apache
+    ansible.builtin.service:
+      name: apache2
+      state: started
+  - name: Iniciando Mysql
+    ansible.builtin.service:
+      name: mysql
+      state: started
+  - name: Creando Base de Datos y Usuario WordPress
+    ansible.builtin.command: "{{ item }}"
+    with_items:
+      - mysql -uroot -pwordpress -e "CREATE USER wordpress@localhost IDENTIFIED BY 'wordpress';"
+      - mysql -uroot -pwordpress -e "create database wordpress;"
+      - mysql -uroot -pwordpress -e "GRANT ALL ON wordpress.* to wordpress@localhost;"                                                                                                                             
+  - name: Eliminando archivo 000-default.conf
+    ansible.builtin.file:
+      path: /etc/apache2/sites-enabled/000-default.conf
+      state: absent 
+  - name: Copiando archivo wordpress.conf
+    ansible.builtin.copy:
+      src: /home/vagrant/data/virtual-host.conf
+      dest: /etc/apache2/sites-available/wordpress.conf
+      owner: www-data
+      group: www-data
+      mode: '0755'
+  - name: Creando link simbolico
+    ansible.builtin.file:
+      src: /etc/apache2/sites-available/wordpress.conf
+      dest: /etc/apache2/sites-enabled/wordpress.conf
+      owner: www-data
+      group: www-data
+      state: link
+  - name: Reiniciando Apache
+    ansible.builtin.service:
+      name: apache2
+      state: reloaded
+  - name: Copiando archivo wp-config.php
+    ansible.builtin.copy:
+      src: /home/vagrant/data/wp-config.php
+      dest: /srv/www/wordpress/wp-config.php
+      owner: www-data
+      group: www-data
+  - name: Instalando wordpress
+    ansible.builtin.command: "{{ item }}"
+    with_items:
+      - 'wp core install  --path=/srv/www/wordpress --user=www-data --url=localhost --title=eric --admin_user=admin --admin_password=admin --admin_email=ergarcia296@gmail.com --allow-root'
+      - 'wp plugin update --all --path=/srv/www/wordpress --allow-root'
+      - 'wp theme update --all --path=/srv/www/wordpress --allow-root'
+      - 'wp post delete 1 --path=/srv/www/wordpress --allow-root'
+  - name: Copiando archivo Post
+    ansible.builtin.copy:
+      src: /home/vagrant/data/post.txt
+      dest: /srv/www/wordpress/post.txt
+      owner: www-data
+      group: www-data
+      mode: '0777'
+  - name: Creando Post Personalizado
+    ansible.builtin.command: "{{ item }}"
+    with_items:
+      - 'wp post create /srv/www/wordpress/post.txt --post_status=publish --post_title=Eric-Garcia --path=/srv/www/wordpress --allow-root'
+
+    
+    
+
+
+
+    
+
+
+    
